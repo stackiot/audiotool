@@ -51,14 +51,16 @@ Open http://localhost:8000 to use the browser client with your microphone.
 
 The RunPod HTTP proxy closes connections after 100 seconds, so live WebSockets have to go through a **TCP port** instead.
 
-1. Build the image and push it from the repo root. The build downloads and converts the official Apex weights itself, so it needs no local model files, but it needs about 4 GB of RAM and 10 GB of free disk.
+1. GitHub Actions (`.github/workflows/docker.yml`) builds the image whenever `live/` changes on `main` and pushes it to `ghcr.io/stackiot/audiotool`. It's tagged `latest` and with the short commit hash. You can also start a build by hand from the repo's Actions tab.
+
+   To build it yourself instead, run this from the repo root. The build downloads and converts the official Apex weights itself, so it needs no local model files, but it needs about 4 GB of RAM and 10 GB of free disk.
    ```sh
-   docker build --platform linux/amd64 -f live/Dockerfile -t <dockerhub-user>/hinglish-stt:1 .
-   docker push <dockerhub-user>/hinglish-stt:1
+   docker build --platform linux/amd64 -f live/Dockerfile -t ghcr.io/stackiot/audiotool:latest .
    ```
 2. Create a Pod:
    - GPU: any 16 GB card is enough.
-   - Image: `<dockerhub-user>/hinglish-stt:1`
+   - Image: `ghcr.io/stackiot/audiotool:latest`. Pin a commit tag such as `:sha-0800fa0` if you want a fixed version.
+   - If the package is private, add **Container Registry Auth** in RunPod Settings. Use registry `ghcr.io`, your GitHub username, and a GitHub token with the `read:packages` scope.
    - **Expose TCP Ports:** `8000`
    - Environment variable: `STT_TOKEN=<long random string>`. You can generate one with `openssl rand -hex 24`.
 3. Under **Connect → Direct TCP Ports**, note the public `IP:PORT`, then run:
