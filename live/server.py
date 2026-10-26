@@ -2,12 +2,14 @@
 
 Clients stream raw 16 kHz mono 16-bit PCM to /ws. The server cuts the stream
 into utterances (on silence, or when the client sends {"type": "end"}) and
-replies with partial and final text. Protocol details are in README.md.
+replies with partial and final text. POST /transcribe takes one utterance per
+HTTP request instead, for RunPod Serverless. Protocol details are in README.md.
 
 Run:  uvicorn server:app --host 0.0.0.0 --port 8000
 """
 import asyncio
 import collections
+import io
 import json
 import logging
 import os
@@ -17,9 +19,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-from faster_whisper import WhisperModel
+from faster_whisper import WhisperModel, decode_audio
 
 ROOT = Path(__file__).parent
 SAMPLE_RATE = 16000
@@ -62,8 +64,9 @@ async def lifespan(_: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
-def transcribe(pcm: np.ndarray, language: str, beam_size: int) -> str:
-    audio = pcm.astype(np.float32) / 32768.0
+def transcribe(audio: np.ndarray, language: str, beam_size: int) -> str:
+    if audio.dtype == np.int16:
+        audio = audio.astype(np.float32) / 32768.0
     segments, _ = model.transcribe(
         audio, language=language, task="transcribe", beam_size=beam_size,
         temperature=0.0, condition_on_previous_text=False, without_timestamps=True,
@@ -179,6 +182,39 @@ def index():
 @app.get("/health")
 def health():
     return {"model": Path(MODEL_DIR).name, "device": DEVICE, "workers": WORKERS}
+
+
+@app.get("/ping")
+def ping():
+    # RunPod Serverless health check; the model is loaded before the app serves requests.
+    return {"status": "ok"}
+
+
+@app.post("/transcribe")
+async def transcribe_http(request: Request):
+    """One utterance per request, for clients that can't hold a WebSocket open
+    (e.g. RunPod Serverless). The body is an audio file in any common format,
+    or raw 16 kHz mono s16le PCM with ?format=pcm16."""
+    q = request.query_params
+    if TOKEN and not secrets.compare_digest(request.headers.get("x-stt-token", q.get("token", "")), TOKEN):
+        raise HTTPException(401, "bad token")
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "empty body")
+    try:
+        if q.get("format") == "pcm16":
+            audio = np.frombuffer(body[:len(body) - len(body) % 2], dtype=np.int16)
+        else:
+            audio = await asyncio.to_thread(decode_audio, io.BytesIO(body), SAMPLE_RATE)
+    except Exception as e:
+        raise HTTPException(400, f"could not decode audio: {e}")
+    if len(audio) > MAX_UTTERANCE_S * SAMPLE_RATE:
+        raise HTTPException(413, f"audio longer than {MAX_UTTERANCE_S:g}s; split it into utterances")
+    t0 = time.perf_counter()
+    async with gpu_slots:
+        text = await asyncio.to_thread(transcribe, audio, q.get("lang", LANGUAGE), 5)
+    return {"text": text, "audio_s": round(len(audio) / SAMPLE_RATE, 2),
+            "latency_s": round(time.perf_counter() - t0, 2)}
 
 
 @app.websocket("/ws")

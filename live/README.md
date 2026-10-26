@@ -76,6 +76,29 @@ Browsers only allow microphone access on HTTPS or localhost. To use the browser 
 ssh -L 8000:localhost:8000 root@IP -p <ssh port> -i ~/.ssh/id_ed25519
 ```
 
+## Deploy on RunPod Serverless (pay only while transcribing)
+
+A Serverless worker can't hold a live WebSocket, so this route uses `POST /transcribe`, **one utterance per request**. Your client decides where each utterance ends: on PTT release, or with its own silence detection. The image is the same one the Pod uses.
+
+1. In RunPod, go to **Serverless → New Endpoint → Import from Docker registry**:
+   - Image: `ghcr.io/stackiot/audiotool:latest`
+   - Endpoint type: **Load balancer** (requests go straight to the worker's HTTP port, with no job queue)
+   - GPU: 16 GB tier
+   - **Expose HTTP Ports:** `8000`
+   - Environment variables: `PORT=8000`, `STT_TOKEN=<long random string>`. The health check uses `/ping`, which is RunPod's default.
+   - Workers: Min `0` (scales to zero, nothing billed while idle), Max as needed. Idle timeout of about 60 s or more keeps a warm worker between bursts of traffic.
+2. Send each utterance:
+   ```sh
+   curl -X POST "https://<ENDPOINT_ID>.api.runpod.ai/transcribe" \
+     -H "Authorization: Bearer <RUNPOD_API_KEY>" \
+     -H "X-STT-Token: <token>" \
+     --data-binary @utterance.wav
+   # → {"text":"Hello, kal office mein meeting hai.","audio_s":2.8,"latency_s":0.4}
+   ```
+   For raw 16 kHz mono s16le PCM, add `?format=pcm16`. Audio can be at most 25 s long; split anything longer into utterances.
+
+**Cold starts:** when the endpoint has scaled to zero, the first request waits for a worker to start and load the model, which can take tens of seconds. While no worker is ready, the request can fail with "no workers available", so retry 3 times, 5–10 s apart. To avoid cold starts for live traffic, set Min workers to `1`, but you then pay for that worker around the clock.
+
 ## Settings (environment variables)
 
 | Variable | Default | |

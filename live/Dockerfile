@@ -31,4 +31,5 @@ COPY live/server.py live/live.html /app/
 ENV STT_MODEL_DIR=/models/apex-ct2 STT_DEVICE=cuda
 WORKDIR /app
 EXPOSE 8000
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+# RunPod Serverless load-balancing endpoints tell the worker its port via $PORT.
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-8000}"]
