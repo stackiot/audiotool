@@ -5,6 +5,7 @@ Run:  ./run.sh   then open http://localhost:8000
 Set RUNPOD_STT_URL, RUNPOD_API_KEY and STT_TOKEN (run.sh reads them from
 ~/.audiotool.env) to add a column for the live/ server on RunPod Serverless.
 """
+import hashlib
 import io
 import logging
 import os
@@ -30,6 +31,7 @@ MODELS = {
 # The deployed live/ server, called over HTTP instead of loaded locally.
 REMOTE_URL = os.environ.get("RUNPOD_STT_URL", "").rstrip("/")
 log = logging.getLogger("uvicorn.error")
+SAVE_CLIPS_DIR = os.environ.get("SAVE_CLIPS_DIR", "")
 REMOTE = ("RunPod GPU · Apex", "Whisper large-v3-turbo · int8_float16 · Serverless")
 
 _loaded: dict[str, WhisperModel] = {}
@@ -103,13 +105,23 @@ def _transcribe_remote(data: bytes) -> dict:
 
 @app.post("/transcribe/{model_id}")
 def transcribe(model_id: str, audio: UploadFile = File(...)):
+    data = audio.file.read()
+    clip = hashlib.sha1(data).hexdigest()[:10]
+    if SAVE_CLIPS_DIR:  # debugging aid: keep recordings so a bad transcript can be replayed
+        Path(SAVE_CLIPS_DIR).mkdir(parents=True, exist_ok=True)
+        (Path(SAVE_CLIPS_DIR) / f"{clip}.webm").write_bytes(data)
+    result = _transcribe(model_id, data)
+    log.info("clip %s %s: %s", clip, model_id, result["text"])
+    return result
+
+
+def _transcribe(model_id: str, data: bytes) -> dict:
     if model_id == "remote" and REMOTE_URL:
-        return _transcribe_remote(audio.file.read())
+        return _transcribe_remote(data)
     if model_id not in MODELS:
         raise HTTPException(404, "unknown model")
     if not _available(model_id):
         raise HTTPException(409, "model not downloaded")
-    data = audio.file.read()
     with _lock:
         t0 = time.perf_counter()
         model = _get_model(model_id)

@@ -81,7 +81,9 @@ def transcribe(audio: np.ndarray, language: str, beam_size: int) -> str:
         audio = audio.astype(np.float32) / 32768.0
     segments, _ = model.transcribe(
         audio, language=language, task="transcribe", beam_size=beam_size,
-        temperature=0.0, condition_on_previous_text=False, without_timestamps=True,
+        # Keep timestamp decoding on: with without_timestamps=True the Oriserve
+        # models often drop the last word of short push-to-talk clips.
+        temperature=0.0, condition_on_previous_text=False,
     )
     return " ".join(s.text.strip() for s in segments).strip()
 
