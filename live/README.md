@@ -1,6 +1,6 @@
 # Live STT server
 
-Clients stream audio over a WebSocket. The server splits the audio into utterances wherever the speaker pauses, transcribes them with the Prime model on the GPU, and sends the text back.
+Clients stream audio over a WebSocket. The server splits the audio into utterances wherever the speaker pauses, transcribes them with the Apex model (Whisper large-v3-turbo, Hinglish fine-tune) on the GPU, and sends the text back.
 
 ```
 client ──PCM audio──▶  /ws  ──▶ endpointing ──▶ faster-whisper (GPU)
@@ -51,7 +51,7 @@ Open http://localhost:8000 to use the browser client with your microphone.
 
 The RunPod HTTP proxy closes connections after 100 seconds, so live WebSockets have to go through a **TCP port** instead.
 
-1. Build the image and push it from the repo root. The build downloads and converts the official Prime weights itself, so it needs no local model files, but it needs about 8 GB of RAM and 15 GB of free disk.
+1. Build the image and push it from the repo root. The build downloads and converts the official Apex weights itself, so it needs no local model files, but it needs about 4 GB of RAM and 10 GB of free disk.
    ```sh
    docker build --platform linux/amd64 -f live/Dockerfile -t <dockerhub-user>/hinglish-stt:1 .
    docker push <dockerhub-user>/hinglish-stt:1
@@ -79,7 +79,7 @@ ssh -L 8000:localhost:8000 root@IP -p <ssh port> -i ~/.ssh/id_ed25519
 | Variable | Default | |
 |---|---|---|
 | `STT_TOKEN` | *(empty: no auth)* | Shared secret that clients pass as `?token=`. |
-| `STT_MODEL_DIR` | `../models/prime-ct2` | Any faster-whisper/CT2 model directory. |
+| `STT_MODEL_DIR` | `../models/apex-ct2` | Any faster-whisper/CT2 model directory. |
 | `STT_DEVICE` / `STT_COMPUTE_TYPE` | `cuda` / `int8_float16` | Use `cpu` / `int8` without a GPU. |
 | `STT_WORKERS` | `2` | Number of utterances transcribed on the GPU at the same time. |
 | `STT_SILENCE_MS` | `700` | Length of pause that ends an utterance. |

@@ -25,7 +25,7 @@ ROOT = Path(__file__).parent
 SAMPLE_RATE = 16000
 FRAME = 480  # 30 ms at 16 kHz; the unit the endpointing works in
 
-MODEL_DIR = os.environ.get("STT_MODEL_DIR", str(ROOT.parent / "models" / "prime-ct2"))
+MODEL_DIR = os.environ.get("STT_MODEL_DIR", str(ROOT.parent / "models" / "apex-ct2"))
 DEVICE = os.environ.get("STT_DEVICE", "cuda")
 COMPUTE_TYPE = os.environ.get("STT_COMPUTE_TYPE", "int8_float16" if DEVICE == "cuda" else "int8")
 # How many utterances the GPU transcribes at once (CTranslate2 worker threads).
