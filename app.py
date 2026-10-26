@@ -6,6 +6,7 @@ Set RUNPOD_STT_URL, RUNPOD_API_KEY and STT_TOKEN (run.sh reads them from
 ~/.audiotool.env) to add a column for the live/ server on RunPod Serverless.
 """
 import io
+import logging
 import os
 import threading
 import time
@@ -28,6 +29,7 @@ MODELS = {
 
 # The deployed live/ server, called over HTTP instead of loaded locally.
 REMOTE_URL = os.environ.get("RUNPOD_STT_URL", "").rstrip("/")
+log = logging.getLogger("uvicorn.error")
 REMOTE = ("RunPod GPU · Apex", "Whisper large-v3-turbo · int8_float16 · Serverless")
 
 _loaded: dict[str, WhisperModel] = {}
@@ -74,18 +76,23 @@ def _transcribe_remote(data: bytes) -> dict:
                "X-STT-Token": os.environ.get("STT_TOKEN", "")}
     t0 = time.perf_counter()
     # A scaled-to-zero endpoint answers "no workers available" until a worker
-    # boots, so retry for up to ~2 minutes.
-    for attempt in range(12):
+    # boots; poll briefly so the clip goes through as soon as one is ready.
+    deadline = t0 + 120
+    attempt = 0
+    while True:
+        attempt += 1
         try:
             r = httpx.post(f"{REMOTE_URL}/transcribe?format=pcm16", content=pcm,
                            headers=headers, timeout=60)
+            if r.status_code < 500:
+                break
         except httpx.TimeoutException:
-            continue
-        if r.status_code < 500:
-            break
-        time.sleep(10)
-    else:
-        raise HTTPException(504, "RunPod endpoint did not respond; is a worker able to start?")
+            pass
+        if time.perf_counter() > deadline:
+            raise HTTPException(504, "RunPod endpoint did not respond; is a worker able to start?")
+        time.sleep(2)
+    log.info("runpod: %.2fs round trip, %d attempt(s), HTTP %d",
+             time.perf_counter() - t0, attempt, r.status_code)
     if r.status_code != 200:
         raise HTTPException(r.status_code, f"RunPod: {r.text[:200]}")
     j = r.json()
