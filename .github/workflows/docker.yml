@@ -1,12 +1,13 @@
 # Builds the live STT image (live/Dockerfile) and pushes it to
-# ghcr.io/stackiot/audiotool. Runs when live/ changes on main, or by hand
-# from the Actions tab.
+# ghcr.io/stackiot/audiotool. Runs when live/ changes on main, when a v* git
+# tag is pushed (image gets the same tag, e.g. v0.1), or by hand from the Actions tab.
 name: docker
 
 on:
   push:
     branches: [main]
     paths: ["live/**", ".github/workflows/docker.yml"]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -43,7 +44,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
             type=sha,format=short
 
       - uses: docker/build-push-action@v7
