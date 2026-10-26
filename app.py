@@ -24,8 +24,6 @@ MODELS_DIR = ROOT / "models"
 # until its directory contains model.bin.
 MODELS = {
     "swift": ("Oriserve Swift", "swift-ct2", "Whisper base · int8 · 78 MB"),
-    "apex": ("Oriserve Apex", "apex-ct2", "Whisper large-v3-turbo · int8 · 781 MB"),
-    "prime": ("Oriserve Prime", "prime-ct2", "Whisper large-v3 · int8 · 1.5 GB"),
 }
 
 # The deployed live/ server, called over HTTP instead of loaded locally.
