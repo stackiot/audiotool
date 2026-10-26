@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hinglish STT Compare</title>
+<style>
+  :root { --bg:#f6f6f4; --card:#fff; --ink:#1d1d1f; --mute:#6e6e73; --line:#e3e3e0; --accent:#e5484d; --ok:#2f7d4f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151517; --card:#1f1f22; --ink:#eee; --mute:#9a9aa0; --line:#2e2e33; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width:1100px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--mute); margin:0 0 24px; }
+  .ptt { display:flex; align-items:center; gap:16px; margin-bottom:24px; }
+  #btn { width:120px; height:120px; border-radius:50%; border:0; background:var(--accent); color:#fff;
+         font-size:15px; font-weight:600; cursor:pointer; user-select:none; touch-action:none;
+         box-shadow:0 4px 14px rgba(229,72,77,.35); transition:transform .1s; }
+  #btn.rec { transform:scale(1.08); animation:pulse 1s infinite; }
+  #btn:disabled { opacity:.5; cursor:default; }
+  @keyframes pulse { 50% { box-shadow:0 0 0 14px rgba(229,72,77,.15); } }
+  #status { color:var(--mute); }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(var(--cols), minmax(0,1fr)); }
+  @media (max-width:700px) { .grid { grid-template-columns:1fr; } }
+  .head { font-weight:600; }
+  .head small { display:block; font-weight:400; color:var(--mute); font-size:12px; }
+  .take { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  .take audio { width:100%; height:32px; margin-bottom:10px; }
+  .cell { border-top:1px solid var(--line); padding-top:8px; min-height:48px; }
+  .cell .name { font-size:12px; color:var(--mute); }
+  .cell .txt { font-size:17px; margin:2px 0; }
+  .cell .meta { font-size:12px; color:var(--mute); }
+  .na { color:var(--mute); font-style:italic; }
+  .err { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Hinglish speech-to-text: side by side</h1>
+  <p class="sub">Hold the button (or the space bar), speak, then release. Every model transcribes the same clip.</p>
+
+  <div class="ptt">
+    <button id="btn" disabled>Hold to talk</button>
+    <span id="status">Loading…</span>
+  </div>
+
+  <div class="grid" id="heads"></div>
+  <div id="takes" style="margin-top:12px"></div>
+</main>
+
+<script>
+const btn = document.getElementById('btn');
+const statusEl = document.getElementById('status');
+let models = [], stream, recorder, chunks = [], recording = false;
+
+async function init() {
+  models = await (await fetch('/models')).json();
+  document.documentElement.style.setProperty('--cols', models.length);
+  document.getElementById('heads').innerHTML = models.map(m =>
+    `<div class="head">${m.label}<small>${m.desc}${m.available ? '' : ' · not downloaded'}</small></div>`).join('');
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    btn.disabled = false;
+    statusEl.textContent = 'Ready';
+  } catch (e) {
+    statusEl.textContent = 'Microphone blocked: ' + e.message;
+  }
+}
+
+function start() {
+  if (recording || btn.disabled) return;
+  recording = true; chunks = [];
+  recorder = new MediaRecorder(stream);
+  recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => handleClip(new Blob(chunks, { type: recorder.mimeType }));
+  recorder.start();
+  btn.classList.add('rec'); btn.textContent = 'Listening…'; statusEl.textContent = 'Recording';
+}
+
+function stop() {
+  if (!recording) return;
+  recording = false;
+  recorder.stop();
+  btn.classList.remove('rec'); btn.textContent = 'Hold to talk';
+}
+
+async function handleClip(blob) {
+  const take = document.createElement('div');
+  take.className = 'take';
+  take.innerHTML = `<audio controls src="${URL.createObjectURL(blob)}"></audio>
+    <div class="grid">${models.map(m => `<div class="cell" data-id="${m.id}">
+      <div class="name">${m.label}</div>
+      <div class="txt ${m.available ? '' : 'na'}">${m.available ? '…' : 'not downloaded'}</div>
+      <div class="meta"></div></div>`).join('')}</div>`;
+  document.getElementById('takes').prepend(take);
+
+  // Sequential so results appear smallest-model-first and timings don't overlap.
+  for (const m of models.filter(m => m.available)) {
+    const cell = take.querySelector(`[data-id="${m.id}"]`);
+    statusEl.textContent = `Transcribing with ${m.label}…`;
+    const fd = new FormData();
+    fd.append('audio', blob, 'clip');
+    try {
+      const r = await fetch(`/transcribe/${m.id}`, { method: 'POST', body: fd });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || r.status);
+      cell.querySelector('.txt').textContent = j.text || '(no speech detected)';
+      cell.querySelector('.meta').textContent =
+        `${j.infer_s}s for ${j.audio_s}s audio` + (j.load_s > 0.05 ? ` · first load ${j.load_s}s` : '');
+    } catch (e) {
+      cell.querySelector('.txt').innerHTML = `<span class="err">Error: ${e.message}</span>`;
+    }
+  }
+  statusEl.textContent = 'Ready';
+}
+
+btn.addEventListener('pointerdown', e => { e.preventDefault(); start(); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) { e.preventDefault(); start(); } });
+document.addEventListener('keyup', e => { if (e.code === 'Space') { e.preventDefault(); stop(); } });
+init();
+</script>
+</body>
+</html>

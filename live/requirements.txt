@@ -1,0 +1,4 @@
+faster-whisper==1.2.1
+fastapi
+uvicorn[standard]
+numpy

@@ -1,0 +1,6 @@
+*
+!live/requirements.txt
+!live/server.py
+!live/live.html
+!models/prime-ct2/**
+models/prime-ct2/.gitattributes
