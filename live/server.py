@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
+import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from faster_whisper import WhisperModel, decode_audio
@@ -49,7 +50,7 @@ gpu_slots: asyncio.Semaphore | None = None
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(_app: FastAPI):
     global model, gpu_slots
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if not TOKEN:
@@ -58,7 +59,18 @@ async def lifespan(_: FastAPI):
     model = WhisperModel(MODEL_DIR, device=DEVICE, compute_type=COMPUTE_TYPE, num_workers=WORKERS)
     gpu_slots = asyncio.Semaphore(WORKERS)
     log.info("loaded %s on %s/%s in %.1fs", MODEL_DIR, DEVICE, COMPUTE_TYPE, time.perf_counter() - t0)
+    # RunPod Serverless may health-check a different port (PORT_HEALTH, which its
+    # endpoint form defaults to 80); serve the app there too once the model is ready.
+    health_server = None
+    health_port = os.environ.get("PORT_HEALTH")
+    if health_port and health_port != os.environ.get("PORT", "8000"):
+        health_server = uvicorn.Server(uvicorn.Config(_app, host="0.0.0.0", port=int(health_port), lifespan="off"))
+        health_task = asyncio.create_task(health_server.serve())
+        log.info("health checks also served on port %s", health_port)
     yield
+    if health_server:
+        health_server.should_exit = True
+        await health_task
 
 
 app = FastAPI(lifespan=lifespan)
