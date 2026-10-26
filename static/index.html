@@ -106,7 +106,8 @@ async function handleClip(blob) {
       if (!r.ok) throw new Error(j.detail || r.status);
       cell.querySelector('.txt').textContent = j.text || '(no speech detected)';
       cell.querySelector('.meta').textContent =
-        `${j.infer_s}s for ${j.audio_s}s audio` + (j.load_s > 0.05 ? ` · first load ${j.load_s}s` : '');
+        `${j.infer_s}s for ${j.audio_s}s audio` + (j.load_s > 0.05 ? ` · first load ${j.load_s}s` : '') +
+        (j.rtt_s ? ` · ${j.rtt_s}s round trip` : '');
     } catch (e) {
       cell.querySelector('.txt').innerHTML = `<span class="err">Error: ${e.message}</span>`;
     }
