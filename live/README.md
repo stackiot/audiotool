@@ -51,7 +51,7 @@ Open http://localhost:8000 to use the browser client with your microphone.
 
 The RunPod HTTP proxy closes connections after 100 seconds, so live WebSockets have to go through a **TCP port** instead.
 
-1. Build the image and push it from the repo root. Docker Desktop must be running.
+1. Build the image and push it from the repo root. The build downloads and converts the official Prime weights itself, so it needs no local model files, but it needs about 8 GB of RAM and 15 GB of free disk.
    ```sh
    docker build --platform linux/amd64 -f live/Dockerfile -t <dockerhub-user>/hinglish-stt:1 .
    docker push <dockerhub-user>/hinglish-stt:1
